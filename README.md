@@ -76,7 +76,37 @@ Sem o `.env` configurado (veja abaixo), a página mostra um aviso de erro: ela s
 
 3. Reinicie o `npm run dev` depois de alterar o `.env`.
 
-A segurança depende do **RLS** do Supabase: a tabela `dataset_weather_goes` e a view `clima_atual` precisam permitir `SELECT` para o papel `anon`. O frontend só lê; não faz escrita.
+A segurança depende do **RLS** do Supabase: a tabela `dataset_weather_goes` e a view `clima_atual` precisam permitir `SELECT` para o papel `anon`. O frontend só **lê** do Supabase e nunca escreve nele diretamente; a única escrita é o envio dos 4 dados da previsão para a **API do backend** (veja abaixo).
+
+## Conectar ao backend
+
+A tela **Integração** (menu "Integração", rota `/integracao`) conversa com a API HTTP do backend:
+
+- **Enviar dados para a previsão:** o usuário digita os 4 dados (temperatura em °C, umidade relativa em %, pressão ao nível do mar em hPa e nebulosidade em %), que vão em `POST {VITE_API_URL}/previsao` no JSON `{ "temperature_2m", "relative_humidity_2m", "pressure_msl", "cloud_cover" }` (números). O backend devolve a previsão do modelo, e a tela mostra "Vai chover" ou "Não vai chover", a probabilidade em % e os 4 valores enviados. O front **não calcula** a previsão: só exibe o que vem do backend.
+
+  **Formato de resposta (provisório, ainda não confirmado pelo backend):**
+
+  ```json
+  { "vai_chover": true, "probabilidade": 0.72 }
+  ```
+
+  - `vai_chover`: boolean.
+  - `probabilidade`: número. Hoje o front supõe a escala de 0 a 1 (0.72 = 72%). Se o backend mandar de 0 a 100, troque `PROBABILIDADE_ESCALA` para `100`.
+  - Os nomes ficam em `RESPOSTA_JSON` e a escala em `PROBABILIDADE_ESCALA`, os dois em `src/services/previsaoApi.js`.
+  - Se faltar algum dos campos, ou se a probabilidade ficar fora de 0 a 100%, a tela mostra "Resposta inesperada do servidor".
+- **Consultar histórico por data:** `GET {VITE_API_URL}/historico?data=AAAA-MM-DD`, que devolve a previsão registrada para o dia no **mesmo formato provisório** da resposta do POST (`{ "vai_chover": true, "probabilidade": 0.72 }`). A tela mostra "Vai chover" ou "Não vai chover" e a probabilidade. Se vier uma lista, o front usa a primeira previsão (provisório). Quando não há previsão para a data, a resposta é 404 e a tela mostra "Sem previsão registrada".
+
+1. No `.env`, preencha a URL base da API, sem barra no final:
+
+   ```env
+   VITE_API_URL=http://localhost:8000
+   ```
+
+2. Reinicie o `npm run dev`.
+
+Sem `VITE_API_URL`, o painel funciona normalmente e só a tela Integração mostra o aviso "Backend não configurado". A URL fica visível no navegador, então não coloque nela senha nem chave secreta. O backend precisa liberar o **CORS** para a origem do frontend (ex.: `http://localhost:5173`). Se o site for publicado em HTTPS, a API também precisa estar em HTTPS, senão o navegador bloqueia as chamadas.
+
+Rotas, nomes dos campos do JSON e tempo limite (10 s) ficam todos em `src/services/previsaoApi.js`.
 
 ### De onde vem cada dado
 
@@ -114,7 +144,7 @@ npm test         # roda os testes (Vitest) com respostas simuladas do banco (src
 
 ## Organização do código
 
-- `src/App.jsx`: página principal (seções Mapa, Agora, Semana e Dados).
+- `src/App.jsx`: as duas rotas: `/`, o painel (os itens Mapa, Agora, Semana e Dados do menu rolam até a seção, sem mudar o endereço), e `/integracao`.
 - `src/components/`: gráficos, chuva acumulada, indicadores, últimos 7 dias e tabelas.
 - `src/components/CityMap.jsx`: mapa de Londrina (Leaflet + OpenStreetMap), carregado à parte para não pesar a página. Abre enquadrando o município inteiro.
 - `src/data/londrina-ibge.json`: limite oficial do município, baixado da API de malhas do IBGE em **qualidade máxima** (malha municipal 2022, 917 pontos, 18 KB). A versão simplificada se afastava até 1,7 km da divisa real.
@@ -123,6 +153,11 @@ npm test         # roda os testes (Vitest) com respostas simuladas do banco (src
 - `src/lib/supabase.js`: instância única do cliente Supabase (ou `null` sem `.env`).
 - `src/services/forecastRepo.js`: consultas ao Supabase (Seção 1 do SQL da equipe do banco).
 - `src/services/weatherApi.js`: converte as respostas do banco para a tela, valida tudo (`normalize()`), mostra erro por bloco e mantém cache de 5 minutos.
+- `src/services/previsaoApi.js`: chamadas HTTP ao backend (`enviarPrevisao`, `buscarHistorico`); todo o contrato da API fica aqui.
+- `src/components/PredictionForm.jsx`: formulário com os 4 dados da previsão (validação e envio).
+- `src/components/HistoricoBusca.jsx`: busca no backend a previsão registrada para uma data.
+- `src/components/ResultadoPrevisao.jsx`: card "Vai chover / Não vai chover" com a probabilidade, usado nos dois quadros.
+- `src/lib/camposPrevisao.js`: rótulo, unidade e faixa válida de cada um dos 4 dados.
 - `src/test/dbFixture.js`: respostas simuladas do banco, usadas **só nos testes**.
 - `src/lib/format.js`: formatação de valores e datas.
 - `src/styles.css`: estilos, responsividade e animações da interface.

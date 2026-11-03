@@ -36,6 +36,7 @@ button:disabled { cursor: not-allowed; opacity: 0.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
 .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 section { margin-bottom: 32px; }
+main section[id] { scroll-margin-top: 80px; } /* a seção não fica escondida atrás do cabeçalho fixo */
 .card { padding: 18px; border: 1px solid var(--line); border-radius: var(--r); background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / 4%); }
 
 .top { position: sticky; top: 0; z-index: 10; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 88%); backdrop-filter: blur(12px); }
@@ -86,6 +87,25 @@ th { color: var(--muted); font-weight: 600; }
 .about { margin-top: 16px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; }
 .about p { margin: 0; color: var(--muted); font-size: 0.9rem; }
 .sources { display: grid; gap: 2px; }
+nav a[aria-current="page"] { background: var(--tint); color: var(--navy); }
+.campo { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.campo label { font-size: 0.9rem; font-weight: 600; }
+.campo input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--text); font: inherit; }
+.campo input[aria-invalid="true"] { border-color: #d64545; }
+.campo-erro { margin: 0; color: #b42318; font-size: 0.8rem; }
+.pilha { display: grid; gap: 16px; margin-bottom: 32px; }
+.acoes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.acoes > p { margin: 0; }
+.btn { min-height: 44px; padding: 0 20px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-weight: 600; }
+.previsao { margin-top: 16px; border-color: var(--light); background: var(--tint); }
+.previsao p { margin: 4px 0; }
+.veredito { display: flex; align-items: center; gap: 10px; color: var(--navy); font-size: 1.6rem; }
+.veredito svg { flex: none; }
+.veredito.chuva svg { color: var(--blue); }
+.veredito.seco svg { color: #b7791f; }
+.prob strong { color: var(--navy); font-size: 1.6rem; }
+.busca { margin-bottom: 16px; }
+.resultado > .previsao { margin-top: 0; }
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; padding-top: 18px; padding-bottom: 28px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; }
 
 @media (max-width: 900px) {

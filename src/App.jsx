@@ -2,16 +2,47 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { getForecast } from './services/weatherApi.js';
 import { RainBars, TempLine } from './components/Charts.jsx';
 import { Indicators, LastDays, MonthPanel, Rain24h, RainEvents, Empty } from './components/Panels.jsx';
+import PredictionForm from './components/PredictionForm.jsx';
+import HistoricoBusca from './components/HistoricoBusca.jsx';
 import { fmtDateTime, fmtDay, fmtFullDateTime } from './lib/format.js';
 
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
 const CityMap = lazy(() => import('./components/CityMap.jsx'));
 
-const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Dados']];
+const NAV = [['mapa', 'Mapa'], ['agora', 'Agora'], ['semana', 'Semana'], ['dados', 'Dados'], ['integracao', 'Integração']];
+
+// Duas rotas sem roteador: "/" é o painel (Mapa, Agora, Semana e Dados são seções dele) e "/integracao" é outra tela.
+const RAIZ = import.meta.env.BASE_URL;
+const ROTA_INTEGRACAO = `${RAIZ}integracao`;
+const telaDaUrl = () => (window.location.pathname.replace(/\/+$/, '') === ROTA_INTEGRACAO ? 'integracao' : 'painel');
 
 export default function App() {
   const [menu, setMenu] = useState(false);
   const [state, setState] = useState({ loading: true, data: null, error: null });
+  const [tela, setTela] = useState(telaDaUrl);
+  const [alvo, setAlvo] = useState(null); // seção para rolar depois da troca de tela
+
+  useEffect(() => {
+    const voltar = () => setTela(telaDaUrl()); // botões voltar/avançar do navegador
+    window.addEventListener('popstate', voltar);
+    return () => window.removeEventListener('popstate', voltar);
+  }, []);
+
+  // A seção só existe depois que o painel aparece, por isso a rolagem fica num efeito.
+  useEffect(() => {
+    if (!alvo) return;
+    if (alvo.id === 'integracao') window.scrollTo(0, 0);
+    else document.getElementById(alvo.id)?.scrollIntoView();
+  }, [alvo]);
+
+  function irPara(e, id) {
+    e.preventDefault();
+    setMenu(false);
+    const destino = id === 'integracao' ? ROTA_INTEGRACAO : RAIZ;
+    if (window.location.pathname !== destino) window.history.pushState(null, '', destino);
+    setTela(id === 'integracao' ? 'integracao' : 'painel');
+    setAlvo({ id });
+  }
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -30,7 +61,7 @@ export default function App() {
     <>
       <header className="top">
         <div className="wrap">
-          <a className="brand" href="#mapa" aria-label="Chuva Londrina, ir para o início">
+          <a className="brand" href={RAIZ} onClick={(e) => irPara(e, 'mapa')} aria-label="Chuva Londrina, ir para o início">
             <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#2563EB" strokeWidth="1.8" strokeLinecap="round">
               <path d="M7 15a4 4 0 0 1 .6-7.95A5.5 5.5 0 0 1 18 8.5 3.5 3.5 0 0 1 17.5 15z" /><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3" />
             </svg>
@@ -38,11 +69,21 @@ export default function App() {
           </a>
           <button className="menu-btn" aria-expanded={menu} aria-controls="nav" onClick={() => setMenu(!menu)}>Menu</button>
           <nav id="nav" className={menu ? 'open' : ''} aria-label="Principal">
-            {NAV.map(([id, n]) => <a key={id} href={`#${id}`} onClick={() => setMenu(false)}>{n}</a>)}
+            {NAV.map(([id, n]) => <a key={id} href={id === 'integracao' ? ROTA_INTEGRACAO : RAIZ} aria-current={id === tela ? 'page' : undefined} onClick={(e) => irPara(e, id)}>{n}</a>)}
           </nav>
         </div>
       </header>
 
+      {tela === 'integracao' ? (
+      <main className="wrap">
+        <h1>Integração com o backend</h1>
+        <p className="meta">Os dados desta tela vêm da API HTTP do backend.</p>
+        <div className="pilha">
+          <PredictionForm />
+          <HistoricoBusca />
+        </div>
+      </main>
+      ) : (
       <main className="wrap">
         <h1>Onde vai chover em Londrina hoje?</h1>
         <p className="meta">
@@ -90,7 +131,9 @@ export default function App() {
           </div>
           <RainEvents events={data?.rainEvents} error={errs.events} />
         </section>
+
       </main>
+      )}
 
       <footer className="wrap foot">
         {/* Fontes reunidas só aqui (no mapa fica apenas o crédito obrigatório do OpenStreetMap) */}
@@ -99,7 +142,7 @@ export default function App() {
           <span>Fonte dos dados: {meta?.source ?? 'não informada'} · Último dado recebido: {fmtFullDateTime(meta?.updatedAt) ?? 'indisponível'}</span>
           <span>Limite municipal: IBGE (malha municipal 2022) · Mapa: © OpenStreetMap</span>
         </div>
-        <a href="#mapa">Voltar ao início</a>
+        <a href={RAIZ} onClick={(e) => irPara(e, 'mapa')}>Voltar ao início</a>
       </footer>
     </>
   );
