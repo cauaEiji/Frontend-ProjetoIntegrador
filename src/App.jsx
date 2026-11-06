@@ -4,6 +4,7 @@ import { RainBars, TempLine } from './components/Charts.jsx';
 import { Indicators, LastDays, MonthPanel, Rain24h, RainEvents, Empty } from './components/Panels.jsx';
 import PredictionForm from './components/PredictionForm.jsx';
 import HistoricoBusca from './components/HistoricoBusca.jsx';
+import PeriodComparison from './components/PeriodComparison.jsx';
 import { fmtDateTime, fmtDay, fmtFullDateTime } from './lib/format.js';
 
 // O mapa (Leaflet) carrega à parte, para não pesar o carregamento inicial da página.
@@ -130,6 +131,7 @@ export default function App() {
               <p>{meta?.about ?? 'A descrição da origem dos dados, do modelo e da frequência de atualização ainda não foi informada.'}</p></div>
           </div>
           <RainEvents events={data?.rainEvents} error={errs.events} />
+          <div className="card compare-card"><PeriodComparison /></div>
         </section>
 
       </main>

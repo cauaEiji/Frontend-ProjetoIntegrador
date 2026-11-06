@@ -42,7 +42,7 @@ export const getMonthHours = (signal, year, month) => {
   const pad = (n) => String(n).padStart(2, '0');
   const next = month === 12 ? `${year + 1}-01` : `${year}-${pad(month + 1)}`;
   return run(supabase.from(TABLE)
-    .select('horario:time, chuva_mm:precipitation')
+    .select('horario:time, chuva_mm:precipitation, temperatura_c:temperature_2m')
     .gte('time', `${year}-${pad(month)}-01T00:00:00`)
     .lt('time', `${next}-01T00:00:00`)
     .limit(744)
