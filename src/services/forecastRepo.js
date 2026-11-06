@@ -10,6 +10,35 @@ const run = async (query) => {
   return data;
 };
 
+const hasRowsBetween = async (signal, start, end) => {
+  const rows = await run(supabase.from(TABLE)
+    .select('time')
+    .gte('time', start)
+    .lt('time', end)
+    .limit(1)
+    .abortSignal(signal));
+  return rows.length > 0;
+};
+
+export const getMonthsWithData = async (signal, year) => {
+  const months = await Promise.all(Array.from({ length: 12 }, (_, index) => index + 1)
+    .map(async (month) => {
+      const start = `${year}-${String(month).padStart(2, '0')}-01T00:00:00`;
+      const next = month === 12 ? `${year + 1}-01-01T00:00:00` : `${year}-${String(month + 1).padStart(2, '0')}-01T00:00:00`;
+      return { month, available: await hasRowsBetween(signal, start, next) };
+    }));
+  return months.filter(({ available }) => available).map(({ month }) => month);
+};
+
+export const getYearsWithData = async (signal, firstYear, lastYear) => {
+  const years = await Promise.all(Array.from({ length: lastYear - firstYear + 1 }, (_, index) => firstYear + index)
+    .map(async (year) => ({
+      year,
+      available: await hasRowsBetween(signal, `${year}-01-01T00:00:00`, `${year + 1}-01-01T00:00:00`),
+    })));
+  return years.filter(({ available }) => available).map(({ year }) => year);
+};
+
 // 1.1 / view clima_atual: último registro (data_hora, cidade, temperatura_c, sensacao_termica_c, umidade_pct, vento_ms, chuva_mm)
 export const getCurrent = (signal) =>
   run(supabase.from('clima_atual').select('*').abortSignal(signal).maybeSingle());
@@ -37,7 +66,7 @@ export const getStation = (signal) =>
   run(supabase.from(TABLE).select('latitude, longitude').order('time', { ascending: false }).limit(1).abortSignal(signal).maybeSingle());
 
 // Registros horários de um mês inteiro (ex.: setembro de 2023), para a chance histórica de chuva.
-// Usa só colunas do .sql (time, precipitation). Um mês tem no máximo 744 horas, abaixo do limite de 1000 linhas.
+// Inclui margem para dias com horário de verão; continua abaixo do limite de 1000 linhas do PostgREST.
 export const getMonthHours = (signal, year, month) => {
   const pad = (n) => String(n).padStart(2, '0');
   const next = month === 12 ? `${year + 1}-01` : `${year}-${pad(month + 1)}`;
@@ -45,7 +74,19 @@ export const getMonthHours = (signal, year, month) => {
     .select('horario:time, chuva_mm:precipitation, temperatura_c:temperature_2m')
     .gte('time', `${year}-${pad(month)}-01T00:00:00`)
     .lt('time', `${next}-01T00:00:00`)
-    .limit(744)
+    .limit(750)
+    .abortSignal(signal));
+};
+
+// Registros horários de um dia, usados para comparar datas específicas.
+export const getDayHours = (signal, year, month, day) => {
+  const start = new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
+  const end = new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+  return run(supabase.from(TABLE)
+    .select('horario:time, chuva_mm:precipitation, temperatura_c:temperature_2m')
+    .gte('time', `${start}T00:00:00`)
+    .lt('time', `${end}T00:00:00`)
+    .limit(25)
     .abortSignal(signal));
 };
 

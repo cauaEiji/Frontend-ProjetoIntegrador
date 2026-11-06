@@ -1,12 +1,15 @@
-import { useState } from 'react';
-import { getMonthHours } from '../services/forecastRepo.js';
+import { useEffect, useRef, useState } from 'react';
+import { getDayHours, getMonthHours, getMonthsWithData, getYearsWithData } from '../services/forecastRepo.js';
 
-const monthValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-const currentMonth = monthValue(new Date());
-const currentYear = new Date().getFullYear();
-const previousYear = monthValue(new Date(currentYear - 1, new Date().getMonth(), 1));
+const periodValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const daysInMonth = (year, month) => new Date(year, month, 0).getDate();
+const today = new Date();
+const currentDate = periodValue(today);
+const currentYear = today.getFullYear();
+const FIRST_DATA_YEAR = 2020;
+const availableDays = (year, month) => year === currentYear && month === today.getMonth() + 1 ? today.getDate() : daysInMonth(year, month);
+const previousYear = periodValue(new Date(currentYear - 1, today.getMonth(), Math.min(today.getDate(), daysInMonth(currentYear - 1, today.getMonth() + 1))));
 const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-const YEARS = Array.from({ length: currentYear - 1999 }, (_, index) => currentYear - index);
 const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
 function summarize(rows) {
@@ -23,19 +26,144 @@ function summarize(rows) {
 }
 
 function periodLabel(value) {
-  const [year, month] = value.split('-').map(Number);
-  return new Date(year, month - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function metric(value, unit) {
   return value == null ? 'Sem dados' : `${number.format(value)} ${unit}`;
 }
 
-export default function PeriodComparison() {
-  const [periods, setPeriods] = useState([previousYear, currentMonth]);
+function MetricBars({ title, values, unit }) {
+  const maximum = Math.max(1, ...values.map(({ value }) => value ?? 0));
+
+  return (
+    <div className="period-chart" role="img" aria-label={`${title}: ${values.map(({ label, value }) => `${label}, ${metric(value, unit)}`).join('; ')}`}>
+      <h3>{title}</h3>
+      <div className="period-chart-bars" aria-hidden="true">
+        {values.map(({ label, value }, index) => (
+          <div className="period-chart-column" key={`${label}-${index}`}>
+            <strong>{metric(value, unit)}</strong>
+            <div className="period-chart-track">
+              {value != null && <div className={`period-chart-bar period-chart-bar-${index}`} style={{ height: `${value === 0 ? 0 : Math.max(4, (value / maximum) * 100)}%` }} />}
+            </div>
+            <span>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function PeriodComparison({ latestDate }) {
+  const [periods, setPeriods] = useState([previousYear, currentDate]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [datesWithData, setDatesWithData] = useState([[], []]);
+  const [checkingDates, setCheckingDates] = useState([true, true]);
+  const [availabilityError, setAvailabilityError] = useState(null);
+  const userSelectedDate = useRef(false);
+  const [yearsWithData, setYearsWithData] = useState([]);
+  const [checkingYears, setCheckingYears] = useState(true);
+  const [monthsWithData, setMonthsWithData] = useState([[], []]);
+  const [checkingMonths, setCheckingMonths] = useState([true, true]);
+
+  useEffect(() => {
+    if (!latestDate || userSelectedDate.current) return;
+    const [year, month, day] = latestDate.slice(0, 10).split('-').map(Number);
+    if (!year || !month || !day) return;
+    const earlierDay = Math.min(day, daysInMonth(year - 1, month));
+    setPeriods([periodValue(new Date(year - 1, month - 1, earlierDay)), latestDate.slice(0, 10)]);
+  }, [latestDate]);
+  useEffect(() => {
+    const controller = new AbortController();
+    getYearsWithData(controller.signal, FIRST_DATA_YEAR, currentYear).then((years) => {
+      if (controller.signal.aborted) return;
+      setYearsWithData(years);
+      setPeriods((current) => current.map((value) => {
+        const [year, month, day] = value.split('-').map(Number);
+        if (years.includes(year) || !years.length) return value;
+        const fallbackYear = years.at(-1);
+        const fallbackMonth = month;
+        const fallbackDay = Math.min(day, daysInMonth(fallbackYear, fallbackMonth));
+        return periodValue(new Date(fallbackYear, fallbackMonth - 1, fallbackDay));
+      }));
+      setAvailabilityError(null);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar os anos disponíveis.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setCheckingYears(false);
+    });
+    return () => controller.abort();
+  }, []);
+
+  const year1 = Number(periods[0].slice(0, 4));
+  const year2 = Number(periods[1].slice(0, 4));
+  useEffect(() => {
+    if (checkingYears) return undefined;
+    const controller = new AbortController();
+    const years = [year1, year2];
+    Promise.all(years.map((year) => getMonthsWithData(controller.signal, year))).then((available) => {
+      if (controller.signal.aborted) return;
+      setMonthsWithData(available);
+      setPeriods((current) => current.map((value, index) => {
+        const [year, month, day] = value.split('-').map(Number);
+        if (year !== years[index] || !available[index].length) return value;
+        const selectedMonth = available[index].includes(month) ? month : available[index].at(-1);
+        const validDay = Math.min(day, daysInMonth(year, selectedMonth));
+        return periodValue(new Date(year, selectedMonth - 1, validDay));
+      }));
+      setAvailabilityError(null);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar os meses disponíveis.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setCheckingMonths([false, false]);
+    });
+    return () => controller.abort();
+  }, [checkingYears, year1, year2]);
+  const monthKey1 = periods[0].slice(0, 7);
+  const monthKey2 = periods[1].slice(0, 7);
+
+  useEffect(() => {
+    if (checkingYears || checkingMonths.some(Boolean)) return undefined;
+    const controller = new AbortController();
+    const monthKeys = [monthKey1, monthKey2];
+
+    if (monthKeys.some((key, index) => {
+      const month = Number(key.slice(5, 7));
+      return !monthsWithData[index].includes(month);
+    })) {
+      setDatesWithData((current) => current.map((days, index) => monthsWithData[index].includes(Number(monthKeys[index].slice(5, 7))) ? days : []));
+      setCheckingDates([false, false]);
+      return undefined;
+    }
+
+    Promise.all(monthKeys.map(async (key) => {
+      const [year, month] = key.split('-').map(Number);
+      const rows = await getMonthHours(controller.signal, year, month);
+      return [...new Set(rows
+        .filter((row) => row.horario && (row.chuva_mm != null || row.temperatura_c != null))
+        .map((row) => Number(String(row.horario).slice(8, 10)))
+        .filter(Number.isInteger))].sort((a, b) => a - b);
+    })).then((available) => {
+      if (controller.signal.aborted) return;
+      setDatesWithData(available);
+      setPeriods((current) => current.map((value, index) => {
+        if (value.slice(0, 7) !== monthKeys[index] || !available[index].length) return value;
+        const selectedDay = Number(value.slice(8, 10));
+        const day = available[index].includes(selectedDay) ? selectedDay : available[index].at(-1);
+        return `${monthKeys[index]}-${String(day).padStart(2, '0')}`;
+      }));
+      setAvailabilityError(null);
+    }).catch((cause) => {
+      if (!controller.signal.aborted) setAvailabilityError(cause.message || 'Não foi possível carregar as datas disponíveis.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setCheckingDates([false, false]);
+    });
+
+    return () => controller.abort();
+  }, [monthKey1, monthKey2, checkingYears, checkingMonths, monthsWithData]);
 
   async function compare(event) {
     event.preventDefault();
@@ -45,8 +173,8 @@ export default function PeriodComparison() {
 
     try {
       const summaries = await Promise.all(periods.map(async (period) => {
-        const [year, month] = period.split('-').map(Number);
-        return summarize(await getMonthHours(undefined, year, month));
+        const [year, month, day] = period.split('-').map(Number);
+        return summarize(await getDayHours(undefined, year, month, day));
       }));
       setResult(summaries);
     } catch (cause) {
@@ -57,16 +185,29 @@ export default function PeriodComparison() {
   }
 
   const delta = (a, b, unit) => a == null || b == null ? 'Sem dados para comparar' : `${number.format(b - a)} ${unit}`;
+  const comparisonDisabled = loading || checkingYears || checkingMonths.some(Boolean) || checkingDates.some(Boolean) || datesWithData.some((days) => !days.length);
 
   return (
     <section className="period-compare" aria-labelledby="t-comparar-periodos">
       <h2 id="t-comparar-periodos">Comparar períodos</h2>
-      <p className="note">Compare a chuva acumulada e a temperatura média de dois meses.</p>
+      <p className="note">Compare a chuva acumulada e a temperatura média de dois dias.</p>
       <form className="period-form" onSubmit={compare}>
         {periods.map((period, index) => {
-          const [year, month] = period.split('-').map(Number);
-          const updatePeriod = (nextYear, nextMonth) => {
-            setPeriods((current) => current.map((value, i) => i === index ? `${nextYear}-${String(nextMonth).padStart(2, '0')}` : value));
+          const [year, month, day] = period.split('-').map(Number);
+          const updatePeriod = (nextYear, nextMonth, nextDay = day, reloadDates = false, reloadMonths = false) => {
+            userSelectedDate.current = true;
+            const validDay = Math.min(nextDay, availableDays(nextYear, nextMonth));
+            setPeriods((current) => current.map((value, i) => i === index ? periodValue(new Date(nextYear, nextMonth - 1, validDay)) : value));
+            if (reloadMonths) {
+              setCheckingMonths((current) => current.map((value, i) => i === index ? true : value));
+              setMonthsWithData((current) => current.map((value, i) => i === index ? [] : value));
+              setCheckingDates((current) => current.map((value, i) => i === index ? true : value));
+              setDatesWithData((current) => current.map((value, i) => i === index ? [] : value));
+              setAvailabilityError(null);
+            } else if (reloadDates) {
+              setCheckingDates((current) => current.map((value, i) => i === index ? true : value));
+              setDatesWithData((current) => current.map((value, i) => i === index ? [] : value));
+            }
             setResult(null);
             setError(null);
           };
@@ -76,24 +217,37 @@ export default function PeriodComparison() {
               <strong>Período {index + 1}</strong>
               <div className="period-fields">
                 <div className="campo">
+                  <label htmlFor={`period-day-${index}`}>Dia</label>
+                  <select id={`period-day-${index}`} value={datesWithData[index].includes(day) ? day : ''} disabled={loading || checkingDates[index] || !datesWithData[index].length} onChange={(event) => updatePeriod(year, month, Number(event.target.value))}>
+                    {checkingDates[index] && <option value="">Buscando datas…</option>}
+                    {!checkingDates[index] && !datesWithData[index].length && <option value="">Sem datas com dados</option>}
+                    {datesWithData[index].map((optionDay) => <option key={optionDay} value={optionDay}>{optionDay}</option>)}
+                  </select>
+                </div>
+                <div className="campo">
                   <label htmlFor={`period-month-${index}`}>Mês</label>
-                  <select id={`period-month-${index}`} value={month} disabled={loading} onChange={(event) => updatePeriod(year, Number(event.target.value))}>
-                    {MONTHS.map((name, monthIndex) => <option key={name} value={monthIndex + 1}>{name}</option>)}
+                  <select id={`period-month-${index}`} value={monthsWithData[index].includes(month) ? month : ''} disabled={loading || checkingYears || checkingMonths[index] || !monthsWithData[index].length} onChange={(event) => updatePeriod(year, Number(event.target.value), day, true)}>
+                    {checkingMonths[index] && <option value="">Buscando meses…</option>}
+                    {!checkingMonths[index] && !monthsWithData[index].length && <option value="">Sem meses com dados</option>}
+                    {monthsWithData[index].map((availableMonth) => <option key={availableMonth} value={availableMonth}>{MONTHS[availableMonth - 1]}</option>)}
                   </select>
                 </div>
                 <div className="campo">
                   <label htmlFor={`period-year-${index}`}>Ano</label>
-                  <select id={`period-year-${index}`} value={year} disabled={loading} onChange={(event) => updatePeriod(Number(event.target.value), month)}>
-                    {YEARS.map((optionYear) => <option key={optionYear} value={optionYear}>{optionYear}</option>)}
+                  <select id={`period-year-${index}`} value={yearsWithData.includes(year) ? year : ''} disabled={loading || checkingYears || !yearsWithData.length} onChange={(event) => updatePeriod(Number(event.target.value), month, day, true, true)}>
+                    {checkingYears && <option value="">Buscando anos…</option>}
+                    {!checkingYears && !yearsWithData.length && <option value="">Sem anos com dados</option>}
+                    {yearsWithData.map((availableYear) => <option key={availableYear} value={availableYear}>{availableYear}</option>)}
                   </select>
                 </div>
               </div>
             </div>
           );
         })}
-        <button className="btn" type="submit" disabled={loading}>{loading ? 'Carregando…' : 'Comparar'}</button>
+        <button className="btn" type="submit" disabled={comparisonDisabled}>{loading ? 'Carregando…' : 'Comparar'}</button>
       </form>
 
+      {availabilityError && <p className="err" role="alert">{availabilityError}</p>}
       {error && <p className="err" role="alert">{error}</p>}
       {result && (
         <div className="period-results" aria-live="polite">
@@ -104,6 +258,18 @@ export default function PeriodComparison() {
               <p>Temperatura média: <strong>{metric(summary.temperature, '°C')}</strong></p>
             </div>
           ))}
+          <div className="period-charts">
+            <MetricBars
+              title="Chuva acumulada"
+              unit="mm"
+              values={result.map((summary, index) => ({ label: periodLabel(periods[index]), value: summary.rain }))}
+            />
+            <MetricBars
+              title="Temperatura média"
+              unit="°C"
+              values={result.map((summary, index) => ({ label: periodLabel(periods[index]), value: summary.temperature }))}
+            />
+          </div>
           <p className="period-difference">
             Diferença (período 2 − período 1): chuva {delta(result[0].rain, result[1].rain, 'mm')} · temperatura {delta(result[0].temperature, result[1].temperature, '°C')}
           </p>

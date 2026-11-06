@@ -131,7 +131,7 @@ export default function App() {
               <p>{meta?.about ?? 'A descrição da origem dos dados, do modelo e da frequência de atualização ainda não foi informada.'}</p></div>
           </div>
           <RainEvents events={data?.rainEvents} error={errs.events} />
-          <div className="card compare-card"><PeriodComparison /></div>
+          <div className="card compare-card"><PeriodComparison latestDate={meta?.updatedAt} /></div>
         </section>
 
       </main>

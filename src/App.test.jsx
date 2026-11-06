@@ -10,6 +10,10 @@ vi.mock('./services/forecastRepo.js', async () => {
   return {
     getCurrent: async () => fx.current, getLast24h: async () => fx.last24, getLastDays: async () => fx.lastDays,
     getRainEvents: async () => fx.events, getStation: async () => fx.station, getMonthHours: async (_s, y, m) => fx.monthHours(y, m),
+    getDayHours: async (_s, y, m, d) => fx.monthHours(y, m).filter((row) => Number(row.horario.slice(8, 10)) === d),
+    getMonthsWithData: async (_s, y) => Array.from({ length: 12 }, (_, i) => i + 1).filter((m) => fx.monthHours(y, m).length),
+    getYearsWithData: async (_s, first, last) => Array.from({ length: last - first + 1 }, (_, i) => first + i)
+      .filter((y) => Array.from({ length: 12 }, (_, i) => i + 1).some((m) => fx.monthHours(y, m).length)),
   };
 });
 const { default: App } = await import('./App.jsx');
